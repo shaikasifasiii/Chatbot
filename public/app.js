@@ -44,6 +44,16 @@ function persistSettings() {
   localStorage.setItem('model', state.model);
 }
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
 async function loadConversation() {
   state.messages = [];
   renderAllMessages();
@@ -52,14 +62,14 @@ async function loadConversation() {
   try {
     const response = await fetch(`/api/conversations/${state.conversationId}`);
     if (response.ok) {
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       state.messages = data.messages ?? [];
       renderAllMessages();
       setStatus(`Conversation ${state.conversationId.slice(0, 8)} ready.`);
       return;
     }
 
-    const errorBody = await response.json().catch(() => ({}));
+    const errorBody = await readJsonResponse(response);
     if (response.status !== 404) {
       const details = [errorBody.error, errorBody.hint].filter(Boolean).join(' - ');
       throw new Error(
@@ -120,7 +130,7 @@ formEl.addEventListener('submit', async (event) => {
       })
     });
 
-    const data = await response.json();
+    const data = await readJsonResponse(response);
     if (!response.ok) {
       throw new Error(data?.error ?? `Request failed (${response.status})`);
     }
