@@ -12,7 +12,7 @@ import {
   listMessages,
   saveInferenceLog,
   touchConversation
-} from './src/db.js';
+} from './src/store.js';
 import { buildChatMessages, createProviderClient, DEFAULT_SYSTEM_PROMPT } from './src/llm.js';
 import { createInferenceLogger } from './src/inferenceLogger.js';
 

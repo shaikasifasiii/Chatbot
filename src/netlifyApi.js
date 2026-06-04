@@ -7,7 +7,7 @@ import {
   listMessages,
   saveInferenceLog,
   touchConversation
-} from './netlifyDb.js';
+} from './store.js';
 import { buildChatMessages, createProviderClient, DEFAULT_SYSTEM_PROMPT } from './llm.js';
 import { createInferenceLogger } from './inferenceLogger.js';
 

@@ -11,13 +11,14 @@ This project is a small full-stack Node.js app that includes:
 ## Run
 
 1. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
-2. Start the app:
+2. Leave `STORE_DRIVER=sqlite` for local development, or set `DATABASE_URL` to point at Postgres if you want to use the hosted storage path locally.
+3. Start the app:
 
 ```bash
 npm start
 ```
 
-3. Open `http://localhost:3000`
+4. Open `http://localhost:3000`
 
 ## Netlify deployment
 
@@ -35,9 +36,30 @@ npm start
 - The standalone Node server remains available for local development and binds to `127.0.0.1` by default.
 - The Netlify build no longer depends on the managed Netlify Database feature, so it works on accounts where that feature is unavailable.
 
+## Deployment Diagram
+
+```mermaid
+flowchart LR
+  U[Browser UI] --> C[Chat API]
+  C --> P[LLM Provider]
+  C --> S[(Storage)]
+  C --> L[Inference Logger]
+  L --> I[Ingestion API]
+  I --> S
+  subgraph Local
+    S --> SQ[(SQLite)]
+  end
+  subgraph Netlify
+    C
+    I
+  end
+```
+
 ## Schema
 
 - `conversations`: one row per session.
 - `messages`: chat messages for each conversation.
 - `inference_logs`: normalized request/response log records.
 - `inference_metadata`: extracted metadata as key/value pairs.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system breakdown.
