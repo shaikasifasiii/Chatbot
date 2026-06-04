@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Chatbot Logging Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Inference logging + ingestion</p>
+          <h1>Chat with a model and capture the full request lifecycle.</h1>
+          <p class="lede">
+            Multi-turn chat, lightweight wrapper-based logging, near-real-time ingestion, and SQLite storage in one small app.
+          </p>
+        </div>
+        <div class="controls">
+          <label>
+            Provider
+            <select id="provider">
+              <option value="openai">OpenAI-compatible</option>
+              <option value="mock">Mock</option>
+            </select>
+          </label>
+          <label>
+            Model
+            <input id="model" type="text" value="gpt-4.1-mini" />
+          </label>
+          <button id="new-chat" type="button">New chat</button>
+        </div>
+      </section>
+
+      <section class="panel chat">
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <textarea id="prompt" rows="3" placeholder="Ask something..."></textarea>
+          <button type="submit">Send</button>
+        </form>
+        <div id="status" class="status"></div>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
