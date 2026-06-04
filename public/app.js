@@ -59,8 +59,12 @@ async function loadConversation() {
       return;
     }
 
+    const errorBody = await response.json().catch(() => ({}));
     if (response.status !== 404) {
-      throw new Error(`Failed to load conversation (${response.status})`);
+      const details = [errorBody.error, errorBody.hint].filter(Boolean).join(' - ');
+      throw new Error(
+        details ? `Failed to load conversation (${response.status}): ${details}` : `Failed to load conversation (${response.status})`
+      );
     }
 
     setStatus('New conversation ready.');
