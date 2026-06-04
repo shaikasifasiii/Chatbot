@@ -1,50 +1,70 @@
-# Architecture
+# Architecture Notes
 
-This repository implements a lightweight chatbot plus inference logging pipeline.
+This app is intentionally small and local-first.
 
-## Runtime Modes
+## Runtime
 
-- Local development:
-  - `server.js` serves the UI and HTTP routes.
-  - `src/db.js` stores data in SQLite.
-- Netlify deployment:
-  - Static assets are published from `public/`.
-  - Netlify Functions handle chat, ingestion, and conversation lookup.
-  - `src/netlifyDb.js` talks to Postgres through `DATABASE_URL`.
+- `server.js` is the only server entrypoint.
+- It serves the static UI from `public/`.
+- It exposes the HTTP routes used by the browser:
+  - `GET /`
+  - `GET /api/health`
+  - `GET /api/conversations/:id`
+  - `POST /api/chat`
+  - `POST /ingest`
 
-## Request Flow
+## Frontend Flow
 
-1. A user sends a prompt from the browser UI.
-2. The chat endpoint loads a short conversation window from storage.
-3. The provider adapter builds the model request.
-4. The model response is persisted as an assistant message.
-5. The logging wrapper asynchronously sends telemetry to `/api/ingest`.
-6. The ingestion handler validates the payload and stores normalized logs and metadata.
+1. The browser loads `public/index.html`, `public/styles.css`, and `public/app.js`.
+2. The app stores the current `conversationId` in `localStorage`.
+3. On load, the UI requests conversation history from `GET /api/conversations/:id`.
+4. On submit, the UI sends the user message to `POST /api/chat`.
+5. The UI updates the message list with the assistant response or error.
+
+## Chat Pipeline
+
+1. The chat route loads the current conversation from SQLite.
+2. It creates the conversation if it does not exist.
+3. It pulls a short recent history window.
+4. It builds the provider prompt with a fixed system message and recent turns.
+5. It calls the selected provider wrapper.
+6. It stores both the user message and the assistant message.
+7. It returns the assistant reply to the browser.
+
+## Logging Pipeline
+
+1. The provider wrapper measures the request.
+2. `src/inferenceLogger.js` builds a compact telemetry payload.
+3. The logger sends the payload to `POST /ingest` asynchronously.
+4. The ingestion route validates the payload.
+5. The ingestion route extracts metadata and writes it to SQLite.
 
 ## Storage Model
 
+The SQLite schema in `src/db.js` stores four logical entities:
+
 - `conversations`
   - one row per chat session
-  - stores a human-friendly title and timestamps
+  - includes title and timestamps
 - `messages`
-  - all user, assistant, system, and tool messages
-  - ordered by `created_at`
+  - all user and assistant messages
+  - linked to a conversation
 - `inference_logs`
-  - one row per model request
+  - one row per model call
   - includes provider, model, latency, token usage, previews, and status
 - `inference_metadata`
-  - flexible key/value metadata extracted from the raw log payload
+  - key/value metadata derived from each inference event
 
-## Design Principles
+## Design Choices
 
-- Keep the chat request path short and synchronous.
-- Send inference telemetry asynchronously so logging failures do not block the response.
-- Keep the schema normalized enough for querying, but not over-modeled.
-- Support a short context window to keep token usage and latency predictable.
-- Use environment-driven backend selection so the same application code works locally and on Netlify.
+- SQLite keeps the app easy to run locally with no external services.
+- The context window stays short so each request stays lightweight.
+- Telemetry is sent asynchronously so logging does not block chat responses.
+- Previews are stored instead of full payloads to keep logs small.
+- The UI keeps state in `localStorage` so refreshes preserve the current conversation.
 
 ## Tradeoffs
 
-- SQLite is simpler for local development, but Postgres is required for hosted persistence.
-- The logger stores previews instead of full prompts/responses to keep the telemetry lightweight.
-- The ingestion API is intentionally permissive on metadata so it can evolve without schema churn.
+- This version is local-only and does not include a production deployment path.
+- SQLite is simple and fast, but it is best suited for a single-user or local setup.
+- If you later want hosted persistence, the storage layer should be abstracted again behind a database adapter.

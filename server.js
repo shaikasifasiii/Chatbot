@@ -3,7 +3,16 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { getStore } from './src/store.js';
+import {
+  addMessage,
+  closeDatabase,
+  createConversation,
+  getConversation,
+  listConversationContext,
+  listMessages,
+  saveInferenceLog,
+  touchConversation
+} from './src/db.js';
 import { buildChatMessages, createProviderClient, DEFAULT_SYSTEM_PROMPT } from './src/llm.js';
 import { createInferenceLogger } from './src/inferenceLogger.js';
 
@@ -125,7 +134,6 @@ function bucketLatency(latencyMs) {
 }
 
 async function handleChat(req, res) {
-  const store = await getStore();
   const body = await readJsonBody(req);
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (!message) {
@@ -135,15 +143,15 @@ async function handleChat(req, res) {
   const provider = typeof body.provider === 'string' ? body.provider : 'openai';
   const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
   const conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : randomUUID();
-  const existingConversation = store.getConversation(conversationId);
+  const existingConversation = getConversation(conversationId);
 
   if (!existingConversation) {
-    store.createConversation({
+    createConversation({
       id: conversationId,
       title: message.slice(0, 48) || 'New conversation'
     });
   } else {
-    store.touchConversation(conversationId);
+    touchConversation(conversationId);
   }
 
   const userMessageId = randomUUID();
@@ -152,14 +160,14 @@ async function handleChat(req, res) {
   const startedAt = new Date().toISOString();
   const start = performance.now();
 
-  store.addMessage({
+  addMessage({
     id: userMessageId,
     conversationId,
     role: 'user',
     content: message
   });
 
-  const historyRows = store.listConversationContext(conversationId, 12);
+  const historyRows = listConversationContext(conversationId, 12);
   const previousHistory = historyRows.slice(0, Math.max(0, historyRows.length - 1));
   const messages = buildChatMessages({
     userMessage: message,
@@ -179,7 +187,7 @@ async function handleChat(req, res) {
     const finishedAt = new Date().toISOString();
     const latencyMs = Math.round(performance.now() - start);
 
-    store.addMessage({
+    addMessage({
       id: assistantMessageId,
       conversationId,
       role: 'assistant',
@@ -231,7 +239,7 @@ async function handleChat(req, res) {
       error
     });
 
-    store.addMessage({
+    addMessage({
       id: assistantMessageId,
       conversationId,
       role: 'assistant',
@@ -243,7 +251,6 @@ async function handleChat(req, res) {
 }
 
 async function handleIngest(req, res) {
-  const store = await getStore();
   const payload = await readJsonBody(req);
   const validationError = validateInferencePayload(payload);
   if (validationError) {
@@ -268,7 +275,7 @@ async function handleIngest(req, res) {
   };
 
   try {
-    await store.saveInferenceLog(logRecord, metadataEntriesFromPayload(payload));
+    saveInferenceLog(logRecord, metadataEntriesFromPayload(payload));
     return sendJson(res, 201, { ok: true, id: logRecord.id });
   } catch (error) {
     return sendJson(res, 500, { error: error.message });
@@ -305,16 +312,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname.startsWith('/api/conversations/')) {
-      const store = await getStore();
       const conversationId = url.pathname.split('/').at(-1);
-      const conversation = store.getConversation(conversationId);
+      const conversation = getConversation(conversationId);
       if (!conversation) {
         return sendJson(res, 404, { error: 'Conversation not found' });
       }
 
       return sendJson(res, 200, {
         conversation,
-        messages: store.listMessages(conversationId, 100)
+        messages: listMessages(conversationId, 100)
       });
     }
 
@@ -345,16 +351,14 @@ server.listen(port, host, () => {
 
 process.on('SIGINT', () => {
   server.close(() => {
-    getStore()
-      .then((store) => store.closeDatabase?.())
-      .finally(() => process.exit(0));
+    closeDatabase();
+    process.exit(0);
   });
 });
 
 process.on('SIGTERM', () => {
   server.close(() => {
-    getStore()
-      .then((store) => store.closeDatabase?.())
-      .finally(() => process.exit(0));
+    closeDatabase();
+    process.exit(0);
   });
 });
