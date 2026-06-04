@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto';
-import { getDatabase } from '@netlify/database';
+import pg from 'pg';
 
-let database;
+const connectionString = process.env.DATABASE_URL;
+let pool;
 
-function getDb() {
-  if (!database) {
-    database = getDatabase();
+function getPool() {
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required for Netlify deployment.');
   }
-  return database;
+
+  if (!pool) {
+    pool = new pg.Pool({
+      connectionString,
+      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }
+    });
+  }
+
+  return pool;
 }
 
 function rows(result) {
@@ -15,7 +24,7 @@ function rows(result) {
 }
 
 async function query(text, values = []) {
-  return getDb().pool.query(text, values);
+  return getPool().query(text, values);
 }
 
 export async function getConversation(id) {
@@ -83,7 +92,7 @@ export async function listConversationContext(conversationId, limit = 12) {
 }
 
 export async function saveInferenceLog(logRecord, metadataEntries = []) {
-  const client = await getDb().pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query('BEGIN');
     await client.query(
