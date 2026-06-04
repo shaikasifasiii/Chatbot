@@ -1,13 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  addMessage,
-  createConversation,
-  getConversation,
-  listConversationContext,
-  listMessages,
-  saveInferenceLog,
-  touchConversation
-} from './store.js';
+import { getStore } from './store.js';
 import { buildChatMessages, createProviderClient, DEFAULT_SYSTEM_PROMPT } from './llm.js';
 import { createInferenceLogger } from './inferenceLogger.js';
 
@@ -92,21 +84,23 @@ export async function handleHealth() {
 }
 
 export async function handleConversation(event) {
+  const store = await getStore();
   const conversationId = event.queryStringParameters?.id;
   if (!conversationId) {
     return json(400, { error: 'Conversation id is required.' });
   }
 
-  const conversation = await getConversation(conversationId);
+  const conversation = await store.getConversation(conversationId);
   if (!conversation) {
     return json(404, { error: 'Conversation not found' });
   }
 
-  const messages = await listMessages(conversationId, 100);
+  const messages = await store.listMessages(conversationId, 100);
   return json(200, { conversation, messages });
 }
 
 export async function handleIngest(event) {
+  const store = await getStore();
   const payload = await readJson(event);
   const validationError = validateInferencePayload(payload);
   if (validationError) {
@@ -131,7 +125,7 @@ export async function handleIngest(event) {
   };
 
   try {
-    await saveInferenceLog(logRecord, metadataEntriesFromPayload(payload));
+    await store.saveInferenceLog(logRecord, metadataEntriesFromPayload(payload));
     return json(201, { ok: true, id: logRecord.id });
   } catch (error) {
     return json(500, { error: error.message });
@@ -139,6 +133,7 @@ export async function handleIngest(event) {
 }
 
 export async function handleChat(event) {
+  const store = await getStore();
   const body = await readJson(event);
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (!message) {
@@ -148,18 +143,18 @@ export async function handleChat(event) {
   const provider = typeof body.provider === 'string' ? body.provider : 'openai';
   const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
   const conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : randomUUID();
-  const existingConversation = await getConversation(conversationId);
+  const existingConversation = await store.getConversation(conversationId);
 
   if (!existingConversation) {
-    await createConversation({
+    await store.createConversation({
       id: conversationId,
       title: message.slice(0, 48) || 'New conversation'
     });
   } else {
-    await touchConversation(conversationId);
+    await store.touchConversation(conversationId);
   }
 
-  const historyRows = await listConversationContext(conversationId, 11);
+  const historyRows = await store.listConversationContext(conversationId, 11);
   const messages = buildChatMessages({
     userMessage: message,
     history: historyRows.map((row) => ({
@@ -178,7 +173,7 @@ export async function handleChat(event) {
   const inferenceLogger = createInferenceLogger({ ingestionUrl });
   const providerClient = createProviderClient({ provider, model });
 
-  await addMessage({
+  await store.addMessage({
     id: userMessageId,
     conversationId,
     role: 'user',
@@ -191,7 +186,7 @@ export async function handleChat(event) {
     const finishedAt = new Date().toISOString();
     const latencyMs = Math.round(performance.now() - start);
 
-    await addMessage({
+    await store.addMessage({
       id: assistantMessageId,
       conversationId,
       role: 'assistant',
@@ -243,7 +238,7 @@ export async function handleChat(event) {
       error
     });
 
-    await addMessage({
+    await store.addMessage({
       id: assistantMessageId,
       conversationId,
       role: 'assistant',

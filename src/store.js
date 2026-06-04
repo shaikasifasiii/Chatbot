@@ -2,20 +2,19 @@ const useSqlite =
   process.env.STORE_DRIVER === 'sqlite' ||
   (!process.env.DATABASE_URL && process.env.STORE_DRIVER !== 'postgres');
 
-const modulePromise = useSqlite ? import('./db.js') : import('./netlifyDb.js');
+const backend = useSqlite ? 'sqlite' : 'postgres';
 
-const store = await modulePromise;
+let storePromise;
 
-export const backend = useSqlite ? 'sqlite' : 'postgres';
-export const {
-  addMessage,
-  closeDatabase,
-  createConversation,
-  getConversation,
-  getInferenceLogByRequestId,
-  listConversationContext,
-  listConversationMessages,
-  listMessages,
-  saveInferenceLog,
-  touchConversation
-} = store;
+async function loadStore() {
+  if (!storePromise) {
+    storePromise = import(useSqlite ? './db.js' : './netlifyDb.js');
+  }
+
+  return storePromise;
+}
+
+export { backend };
+export async function getStore() {
+  return loadStore();
+}
