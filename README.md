@@ -10,8 +10,8 @@ This project is a small full-stack Node.js app that includes:
 
 ## Run
 
-1. Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
-2. Leave `STORE_DRIVER=sqlite` for local development, or set `DATABASE_URL` to point at Postgres if you want to use the hosted storage path locally.
+1. Copy [.env.local.example](/Users/asif/Desktop/Chatbot/.env.local.example) to `.env`.
+2. If you want real model calls locally, set `OPENAI_API_KEY`; otherwise leave it blank and the app uses mock mode.
 3. Start the app:
 
 ```bash
@@ -25,7 +25,7 @@ npm start
 1. Create a Netlify site from this repository.
 2. Provision an external Postgres database such as Neon or Supabase.
 3. Apply the schema in `db/schema.sql` to that database.
-4. Set `DATABASE_URL` in Netlify environment variables, along with `OPENAI_API_KEY` and any provider settings.
+4. Copy [.env.netlify.example](/Users/asif/Desktop/Chatbot/.env.netlify.example) values into the Netlify environment variables panel.
 5. Deploy. The UI is served from `public/` and the API routes are rewritten to Netlify Functions via `netlify.toml`.
 
 ## Notes
@@ -35,6 +35,7 @@ npm start
 - The ingestion endpoint is `POST /ingest` and accepts structured inference log payloads from the SDK wrapper.
 - The standalone Node server remains available for local development and binds to `127.0.0.1` by default.
 - The Netlify build no longer depends on the managed Netlify Database feature, so it works on accounts where that feature is unavailable.
+- Local development reads `.env` through `node --env-file=.env server.js`.
 
 ## Deployment Diagram
 

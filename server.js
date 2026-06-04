@@ -171,6 +171,7 @@ async function handleChat(req, res) {
   });
 
   const providerClient = createProviderClient({ provider, model });
+  const resolvedProvider = providerClient.provider;
 
   try {
     const result = await providerClient.generate(messages);
@@ -191,7 +192,7 @@ async function handleChat(req, res) {
       requestId,
       conversationId,
       sessionId: conversationId,
-      provider,
+      provider: resolvedProvider,
       model,
       messages,
       startedAt,
@@ -221,7 +222,7 @@ async function handleChat(req, res) {
       requestId,
       conversationId,
       sessionId: conversationId,
-      provider,
+      provider: resolvedProvider,
       model,
       messages,
       startedAt,

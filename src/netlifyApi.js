@@ -84,107 +84,131 @@ export async function handleHealth() {
 }
 
 export async function handleConversation(event) {
-  const store = await getStore();
-  const conversationId = event.queryStringParameters?.id;
-  if (!conversationId) {
-    return json(400, { error: 'Conversation id is required.' });
-  }
+  try {
+    const store = await getStore();
+    const conversationId = event.queryStringParameters?.id;
+    if (!conversationId) {
+      return json(400, { error: 'Conversation id is required.' });
+    }
 
-  const conversation = await store.getConversation(conversationId);
-  if (!conversation) {
-    return json(404, { error: 'Conversation not found' });
-  }
+    const conversation = await store.getConversation(conversationId);
+    if (!conversation) {
+      return json(404, { error: 'Conversation not found' });
+    }
 
-  const messages = await store.listMessages(conversationId, 100);
-  return json(200, { conversation, messages });
+    const messages = await store.listMessages(conversationId, 100);
+    return json(200, { conversation, messages });
+  } catch (error) {
+    return json(500, {
+      error: error.message,
+      hint: 'Check DATABASE_URL and database connectivity in Netlify environment variables.'
+    });
+  }
 }
 
 export async function handleIngest(event) {
-  const store = await getStore();
-  const payload = await readJson(event);
-  const validationError = validateInferencePayload(payload);
-  if (validationError) {
-    return json(400, { error: validationError });
-  }
-
-  const logRecord = {
-    id: randomUUID(),
-    requestId: payload.requestId,
-    conversationId: payload.conversationId ?? null,
-    sessionId: payload.sessionId ?? null,
-    provider: payload.provider,
-    model: payload.model,
-    status: payload.status,
-    latencyMs: payload.latencyMs,
-    usage: payload.usage ?? null,
-    inputPreview: payload.inputPreview ?? null,
-    outputPreview: payload.outputPreview ?? null,
-    errorMessage: payload.error?.message ?? null,
-    startedAt: payload.startedAt,
-    finishedAt: payload.finishedAt
-  };
-
   try {
+    const store = await getStore();
+    const payload = await readJson(event);
+    const validationError = validateInferencePayload(payload);
+    if (validationError) {
+      return json(400, { error: validationError });
+    }
+
+    const logRecord = {
+      id: randomUUID(),
+      requestId: payload.requestId,
+      conversationId: payload.conversationId ?? null,
+      sessionId: payload.sessionId ?? null,
+      provider: payload.provider,
+      model: payload.model,
+      status: payload.status,
+      latencyMs: payload.latencyMs,
+      usage: payload.usage ?? null,
+      inputPreview: payload.inputPreview ?? null,
+      outputPreview: payload.outputPreview ?? null,
+      errorMessage: payload.error?.message ?? null,
+      startedAt: payload.startedAt,
+      finishedAt: payload.finishedAt
+    };
+
     await store.saveInferenceLog(logRecord, metadataEntriesFromPayload(payload));
     return json(201, { ok: true, id: logRecord.id });
   } catch (error) {
-    return json(500, { error: error.message });
+    return json(500, {
+      error: error.message,
+      hint: 'Check DATABASE_URL and database connectivity in Netlify environment variables.'
+    });
   }
 }
 
 export async function handleChat(event) {
-  const store = await getStore();
-  const body = await readJson(event);
-  const message = typeof body.message === 'string' ? body.message.trim() : '';
-  if (!message) {
-    return json(400, { error: 'message is required' });
-  }
-
-  const provider = typeof body.provider === 'string' ? body.provider : 'openai';
-  const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
-  const conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : randomUUID();
-  const existingConversation = await store.getConversation(conversationId);
-
-  if (!existingConversation) {
-    await store.createConversation({
-      id: conversationId,
-      title: message.slice(0, 48) || 'New conversation'
-    });
-  } else {
-    await store.touchConversation(conversationId);
-  }
-
-  const historyRows = await store.listConversationContext(conversationId, 11);
-  const messages = buildChatMessages({
-    userMessage: message,
-    history: historyRows.map((row) => ({
-      role: row.role,
-      content: row.content
-    })),
-    systemPrompt: DEFAULT_SYSTEM_PROMPT
-  });
-
-  const userMessageId = randomUUID();
-  const assistantMessageId = randomUUID();
-  const requestId = randomUUID();
-  const startedAt = new Date().toISOString();
-  const start = performance.now();
-  const ingestionUrl = new URL('/api/ingest', originFromEvent(event)).href;
-  const inferenceLogger = createInferenceLogger({ ingestionUrl });
-  const providerClient = createProviderClient({ provider, model });
-
-  await store.addMessage({
-    id: userMessageId,
-    conversationId,
-    role: 'user',
-    content: message
-  });
+  let store;
+  let conversationId;
+  let requestId;
+  let provider;
+  let model;
+  let messages;
+  let startedAt;
+  let finishedAt;
+  let latencyMs;
+  let inferenceLogger;
+  let assistantMessageId;
 
   try {
+    store = await getStore();
+
+    const body = await readJson(event);
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    if (!message) {
+      return json(400, { error: 'message is required' });
+    }
+
+    provider = typeof body.provider === 'string' ? body.provider : 'openai';
+    model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
+    conversationId = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : randomUUID();
+    const existingConversation = await store.getConversation(conversationId);
+
+    if (!existingConversation) {
+      await store.createConversation({
+        id: conversationId,
+        title: message.slice(0, 48) || 'New conversation'
+      });
+    } else {
+      await store.touchConversation(conversationId);
+    }
+
+    const historyRows = await store.listConversationContext(conversationId, 11);
+    messages = buildChatMessages({
+      userMessage: message,
+      history: historyRows.map((row) => ({
+        role: row.role,
+        content: row.content
+      })),
+      systemPrompt: DEFAULT_SYSTEM_PROMPT
+    });
+
+    const userMessageId = randomUUID();
+    assistantMessageId = randomUUID();
+    requestId = randomUUID();
+    startedAt = new Date().toISOString();
+    const start = performance.now();
+    const ingestionUrl = new URL('/api/ingest', originFromEvent(event)).href;
+    inferenceLogger = createInferenceLogger({ ingestionUrl });
+    const providerClient = createProviderClient({ provider, model });
+    provider = providerClient.provider;
+
+    await store.addMessage({
+      id: userMessageId,
+      conversationId,
+      role: 'user',
+      content: message
+    });
+
     const result = await providerClient.generate(messages);
     const output = result.text?.trim() || 'No response returned.';
-    const finishedAt = new Date().toISOString();
-    const latencyMs = Math.round(performance.now() - start);
+    finishedAt = new Date().toISOString();
+    latencyMs = Math.round(performance.now() - start);
 
     await store.addMessage({
       id: assistantMessageId,
@@ -207,7 +231,7 @@ export async function handleChat(event) {
       latencyMs,
       result,
       extraMetadata: {
-        preview_input: message.slice(0, 240),
+        preview_input: body.message.slice(0, 240),
         preview_output: output.slice(0, 240)
       }
     });
@@ -222,29 +246,37 @@ export async function handleChat(event) {
       }
     });
   } catch (error) {
-    const finishedAt = new Date().toISOString();
-    const latencyMs = Math.round(performance.now() - start);
+    if (store && assistantMessageId && conversationId) {
+      try {
+        await store.addMessage({
+          id: assistantMessageId,
+          conversationId,
+          role: 'assistant',
+          content: `Error: ${error.message}`
+        });
+      } catch {
+        // Ignore secondary persistence failures so the handler still returns a useful error.
+      }
+    }
 
-    void inferenceLogger.captureInference({
-      requestId,
-      conversationId,
-      sessionId: conversationId,
-      provider,
-      model,
-      messages,
-      startedAt,
-      finishedAt,
-      latencyMs,
-      error
+    if (inferenceLogger && requestId && messages && startedAt) {
+      void inferenceLogger.captureInference({
+        requestId,
+        conversationId,
+        sessionId: conversationId ?? null,
+        provider: provider ?? 'openai',
+        model: model ?? (process.env.OPENAI_MODEL ?? 'gpt-4.1-mini'),
+        messages,
+        startedAt,
+        finishedAt: finishedAt ?? new Date().toISOString(),
+        latencyMs: latencyMs ?? 0,
+        error
+      });
+    }
+
+    return json(500, {
+      error: error.message,
+      hint: 'Check DATABASE_URL, OPENAI_API_KEY, and database connectivity in Netlify environment variables.'
     });
-
-    await store.addMessage({
-      id: assistantMessageId,
-      conversationId,
-      role: 'assistant',
-      content: `Error: ${error.message}`
-    });
-
-    return json(500, { error: error.message, conversationId, requestId });
   }
 }

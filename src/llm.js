@@ -85,16 +85,18 @@ export function createProviderClient({
   apiKey = process.env.OPENAI_API_KEY ?? '',
   baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com'
 }) {
+  const resolvedProvider = provider === 'mock' || !apiKey ? 'mock' : provider;
+
+  if (provider !== 'mock' && !apiKey) {
+    console.warn('OPENAI_API_KEY is missing, falling back to mock provider.');
+  }
+
   return {
-    provider,
+    provider: resolvedProvider,
     model,
     async generate(messages) {
-      if (provider === 'mock') {
+      if (resolvedProvider === 'mock') {
         return callMockModel({ messages });
-      }
-
-      if (!apiKey) {
-        throw new Error('Missing OPENAI_API_KEY. Use provider=mock for offline testing.');
       }
 
       return callOpenAICompatible({ apiKey, baseUrl, model, messages });
